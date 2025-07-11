@@ -45,8 +45,15 @@ class BaseCrawler:
         chrome_options.add_argument("--window-size=1920,1080")
 
         # 初始化WebDriver
-        service = Service(ChromeDriverManager().install())
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        try:
+            # 首先尝试使用系统的ChromeDriver
+            service = Service('/usr/bin/chromedriver')
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        except Exception:
+            # 如果系统ChromeDriver不可用，则使用ChromeDriverManager
+            service = Service(ChromeDriverManager().install())
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        
         self.wait = WebDriverWait(self.driver, 10)  # 10秒等待时间
 
     def get_links_from_page(self, url, selector=None):

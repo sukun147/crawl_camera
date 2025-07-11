@@ -3,6 +3,7 @@ import time
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
+from urllib.parse import urljoin
 
 
 class DahuaCrawler(BaseCrawler):
@@ -26,6 +27,31 @@ class DahuaCrawler(BaseCrawler):
             "https://www.dahuatech.com/product/lists/19.html",
             "https://www.dahuatech.com/product/lists/1467.html"
         ]
+
+    def get_links_from_page(self, url, selector=None):
+        """获取页面中的产品链接"""
+        links = []
+        try:
+            self.driver.get(url)
+            time.sleep(2)  # 等待页面加载
+
+            # 使用传入的选择器或默认选择器
+            css_selector = selector if selector else "a"
+            
+            # 查找所有产品链接元素
+            link_elements = self.driver.find_elements(By.CSS_SELECTOR, css_selector)
+
+            for element in link_elements:
+                href = element.get_attribute('href')
+                if href:
+                    # 处理相对URL
+                    full_url = urljoin(self.base_url, href)
+                    links.append(full_url)
+
+            return links
+        except Exception as e:
+            print(f"获取产品链接时出错 {url}: {str(e)}")
+            return []
 
     def extract_product_details(self, url):
         """
