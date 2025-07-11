@@ -1,8 +1,6 @@
 import json
 import os
-from datetime import datetime
 
-import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -67,60 +65,11 @@ class BaseCrawler:
             print("没有产品数据可保存")
             return
 
-        # 创建时间戳
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
         # 保存为JSON文件
-        json_path = os.path.join(self.data_dir, f"{self.brand_name}_{timestamp}.json")
+        json_path = os.path.join(self.data_dir, f"{self.brand_name}.json")
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(products, f, ensure_ascii=False, indent=4)
         print(f"JSON数据已保存至: {json_path}")
-
-        # 准备DataFrame
-        rows = []
-        for product in products:
-            row = {
-                'brand': self.brand_name,
-                'id': product.get('id', ''),
-                'name': product.get('name', ''),
-                'url': product.get('url', '')
-            }
-
-            # 添加规格参数
-            specs = product.get('specifications', {})
-            for param_name, param_value in specs.items():
-                row[param_name] = param_value
-
-            rows.append(row)
-
-        # 创建DataFrame
-        df = pd.DataFrame(rows)
-
-        # 保存为Excel文件
-        excel_path = os.path.join(self.data_dir, f"{self.brand_name}_{timestamp}.xlsx")
-        df.to_excel(excel_path, index=False)
-        print(f"Excel数据已保存至: {excel_path}")
-
-        # 创建透视表（按参数名称）
-        try:
-            # 创建参数透视表
-            param_columns = [col for col in df.columns if col not in ['brand', 'id', 'name', 'url']]
-            if param_columns:
-                pivot_df = pd.melt(df,
-                                   id_vars=['brand', 'id', 'name', 'url'],
-                                   value_vars=param_columns,
-                                   var_name='parameter',
-                                   value_name='value')
-
-                # 删除空值行
-                pivot_df = pivot_df.dropna(subset=['value'])
-
-                # 保存为CSV文件
-                pivot_path = os.path.join(self.data_dir, f"{self.brand_name}_pivot_{timestamp}.csv")
-                pivot_df.to_csv(pivot_path, index=False)
-                print(f"透视表数据已保存至: {pivot_path}")
-        except Exception as e:
-            print(f"创建透视表时出错: {str(e)}")
 
     def run(self):
         """运行爬虫"""

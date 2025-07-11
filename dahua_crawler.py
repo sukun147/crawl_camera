@@ -1,5 +1,8 @@
 from base_crawler import BaseCrawler
 import time
+import json
+import os
+from datetime import datetime
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
@@ -77,7 +80,7 @@ class DahuaCrawler(BaseCrawler):
                     # 如果还是不行，继续但可能无法获取参数
 
             # 获取规格参数
-            specs = {}
+            params = []
             try:
                 parameter_sections = self.driver.find_elements(By.CSS_SELECTOR, ".parameter-info")
 
@@ -94,13 +97,16 @@ class DahuaCrawler(BaseCrawler):
                             param_value = value_element.text.strip()
 
                             if param_name and param_value:  # 确保参数名和值不为空
-                                specs[param_name] = param_value
+                                params.append({
+                                    "paramName": param_name,
+                                    "param": param_value
+                                })
                         except Exception as param_e:
                             print(f"提取参数项时出错 {url}: {str(param_e)}")
                             continue
 
                 # 检查是否提取到参数
-                if not specs:
+                if not params:
                     print(f"未提取到任何规格参数 {url}")
                     return None
 
@@ -108,12 +114,11 @@ class DahuaCrawler(BaseCrawler):
                 print(f"提取规格参数时出错 {url}: {str(e)}")
                 return None
 
-            # 准备产品数据
+            # 准备产品数据（新格式）
             product_data = {
-                'id': product_id,
-                'name': name,
-                'url': url,
-                'specifications': specs
+                'product_id': product_id,
+                'product_name': name,
+                'params': params
             }
 
             print(f"✓ 成功提取产品信息: {name} ({product_id})")
