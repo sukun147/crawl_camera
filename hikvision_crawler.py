@@ -32,7 +32,7 @@ class HikvisionCrawler(BaseCrawler):
             product_id = id_element.text.strip()
 
             # 获取规格参数
-            specs = {}
+            params = []
             spec_elements = self.driver.find_elements(By.CSS_SELECTOR, ".tech-specs-accordion-content-desc ul")
 
             for ul in spec_elements:
@@ -44,16 +44,18 @@ class HikvisionCrawler(BaseCrawler):
                         if len(spans) >= 2:
                             param_name = spans[0].text.strip()
                             param_value = spans[1].text.strip()
-                            specs[param_name] = param_value
+                            params.append({
+                                "paramName": param_name,
+                                "param": param_value
+                            })
                     except Exception as e:
                         print(f"提取参数时出错 {url}: {str(e)}")
 
             # 准备产品数据
             product_data = {
-                'name': name,
-                'id': product_id,
-                'url': url,
-                'specifications': specs
+                'product_id': product_id,
+                'product_name': name,
+                'params': params
             }
 
             return product_data

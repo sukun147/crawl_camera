@@ -1,10 +1,12 @@
-from base_crawler import BaseCrawler
 import time
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+
 import requests
 from parsel import Selector
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+
+from base_crawler import BaseCrawler
 
 
 class VivotekCrawler(BaseCrawler):
@@ -140,7 +142,7 @@ class VivotekCrawler(BaseCrawler):
                 # 继续尝试获取参数
 
             # 获取规格参数
-            specs = {}
+            params = []
             try:
                 groups = self.driver.find_elements(By.CSS_SELECTOR, "frontend-collapses-general > div > div > div")
                 for g in groups:
@@ -156,10 +158,13 @@ class VivotekCrawler(BaseCrawler):
                                     param_p.append(p.text.strip())
                         param_value = "; ".join(param_p)
                         if param_name and param_value:
-                            specs[param_name] = param_value
+                            params.append({
+                                "paramName": param_name,
+                                "param": param_value
+                            })
 
                 # 检查是否提取到参数
-                if not specs:
+                if not params:
                     print(f"未提取到任何规格参数 {url}")
                     return None
 
@@ -169,10 +174,10 @@ class VivotekCrawler(BaseCrawler):
 
             # 准备产品数据
             product_data = {
-                'id': prod_id,
-                'name': prod_name,
+                'product_id': prod_id,
+                'product_name': prod_name,
                 'url': url,
-                'specifications': specs
+                'params': params
             }
 
             print(f"✓ 成功提取产品信息: {prod_name} ({prod_id})")

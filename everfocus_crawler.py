@@ -75,7 +75,7 @@ class EverFocusCrawler(BaseCrawler):
                 name = "未知名称"
 
             # 获取规格参数（div > table > tbody > tr）
-            specs = {}
+            params = []
             try:
                 spec_rows = self.driver.find_elements(By.CSS_SELECTOR, 'div > table > tbody > tr')
 
@@ -90,20 +90,22 @@ class EverFocusCrawler(BaseCrawler):
 
                         # 只保存非空参数
                         if param_name and param_value:
-                            specs[param_name] = param_value
+                            params.append({
+                                "paramName": param_name,
+                                "param": param_value
+                            })
             except Exception as e:
                 print(f"提取规格参数时出错 {url}: {str(e)}")
 
             # 检查是否获取到规格参数
-            if not specs:
+            if not params:
                 print(f"未提取到任何规格参数 {url}")
 
-            # 准备产品数据
+            # 准备产品数据（按照新的格式）
             product_data = {
-                'id': product_id,
-                'name': name,
-                'url': url,
-                'specifications': specs
+                'product_id': product_id,
+                'product_name': name,
+                'params': params
             }
 
             print(f"✓ 成功提取产品信息: {name} ({product_id})")
