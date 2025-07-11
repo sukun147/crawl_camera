@@ -1,361 +1,157 @@
 import json
 import os
-import time
-from urllib.parse import urljoin
+from datetime import datetime
 
 import pandas as pd
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Side
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
 
 class BaseCrawler:
-    """
-    爬虫基类，提供通用的爬取和数据处理功能
-    """
-
-    def __init__(self, brand_name, data_dir="data"):
+    def __init__(self, brand_name, data_dir="data", use_selenium=True):
         """
-        初始化爬虫基类
-
-        Args:
-            brand_name: 品牌名称，用于文件命名
-            data_dir: 数据目录
+        初始化爬虫
+        :param brand_name: 品牌名称
+        :param data_dir: 数据保存目录
+        :param use_selenium: 是否使用Selenium（False则不初始化WebDriver）
         """
-        # 基本属性
         self.brand_name = brand_name
         self.data_dir = data_dir
-        self.base_url = None
-        self.start_urls = []
-
-        # 记录开始信息
-        print(f"开始爬取 {brand_name} 数据")
+        self.use_selenium = use_selenium
 
         # 确保数据目录存在
-        if not os.path.exists(self.data_dir):
-            os.makedirs(self.data_dir)
+        if not os.path.exists(data_dir):
+            os.makedirs(data_dir)
 
-        # 配置Chrome
+        # 只有在需要使用Selenium时才初始化WebDriver
+        if self.use_selenium:
+            self._initialize_webdriver()
+
+        # 基础URL和起始URL（子类应覆盖这些属性）
+        self.base_url = ""
+        self.start_urls = []
+
+    def _initialize_webdriver(self):
+        """初始化WebDriver（仅在use_selenium=True时调用）"""
+        # 设置Chrome选项
         chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--headless")  # 无头模式
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument(
-            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1920,1080")
 
         # 初始化WebDriver
-        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-        self.wait = WebDriverWait(self.driver, 10)
+        service = Service(ChromeDriverManager().install())
+        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        self.wait = WebDriverWait(self.driver, 10)  # 10秒等待时间
 
-        # 存储爬取的数据
-        self.all_products = []
-
-    def close(self):
-        """关闭WebDriver"""
-        if self.driver:
-            self.driver.quit()
-
-    def get_links_from_page(self, url, selector):
-        """
-        获取页面中匹配选择器的所有链接
-
-        Args:
-            url: 要爬取的URL
-            selector: CSS选择器
-
-        Returns:
-            匹配的链接列表
-        """
-        links = []
-        try:
-            self.driver.get(url)
-            time.sleep(2)  # 等待页面加载
-
-            elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
-            for element in elements:
-                href = element.get_attribute('href')
-                if href:
-                    # 处理相对URL
-                    if not href.startswith(('http://', 'https://')):
-                        href = urljoin(self.base_url, href)
-                    links.append(href)
-
-            return links
-        except Exception as e:
-            print(f"获取链接时出错 {url}: {str(e)}")
-            return []
+    def get_links_from_page(self, url, selector=None):
+        """获取页面中的链接（子类应覆盖此方法）"""
+        raise NotImplementedError("子类必须实现get_links_from_page方法")
 
     def extract_product_details(self, url):
-        """
-        从产品页面提取产品详情，子类必须实现此方法
-
-        Args:
-            url: 产品页面URL
-
-        Returns:
-            产品数据字典或None（如果提取失败）
-        """
+        """从产品页面提取产品详情（子类必须实现）"""
         raise NotImplementedError("子类必须实现extract_product_details方法")
 
     def process_category_page(self, url):
-        """
-        处理类别页面并处理分页，子类必须实现此方法
-
-        Args:
-            url: 类别页面URL
-
-        Returns:
-            该类别下所有产品链接的列表
-        """
+        """处理类别页面（子类应覆盖此方法）"""
         raise NotImplementedError("子类必须实现process_category_page方法")
 
-    def run(self):
-        """
-        运行爬虫，处理所有起始URL并提取产品详情
-        """
-        skipped_urls = []
-
-        try:
-            all_product_links = []
-
-            # 处理每个起始页面
-            for start_url in self.start_urls:
-                print(f"开始处理类别页面: {start_url}")
-                product_links = self.process_category_page(start_url)
-                all_product_links.extend(product_links)
-
-            print(f"所有类别页面共找到 {len(all_product_links)} 个产品链接")
-
-            # 处理每个产品链接
-            for i, product_link in enumerate(all_product_links):
-                print(f"处理产品 {i + 1}/{len(all_product_links)}: {product_link}")
-                product_data = self.extract_product_details(product_link)
-                if product_data:
-                    self.all_products.append(product_data)
-                else:
-                    skipped_urls.append(product_link)
-
-            # 保存结果
-            if self.all_products:
-                self.process_and_save_data()
-
-                # 保存被跳过的URL
-                if skipped_urls:
-                    with open(os.path.join(self.data_dir, f'{self.brand_name}_skipped_urls.txt'), 'w',
-                              encoding='utf-8') as f:
-                        for url in skipped_urls:
-                            f.write(f"{url}\n")
-
-                print(f"爬取完成。产品总数: {len(self.all_products)}, 跳过URL数: {len(skipped_urls)}")
-            else:
-                print("未采集到任何有效数据")
-
-        except Exception as e:
-            print(f"运行爬虫时出错: {str(e)}")
-
-        finally:
-            self.close()
-
-    def prepare_data(self):
-        """
-        准备基本数据和规格参数数据
-
-        Returns:
-            (products_df, specs_df): 包含产品信息和规格参数的DataFrame
-        """
-        try:
-            # 准备基本产品信息数据
-            basic_data = []
-            for product in self.all_products:
-                basic_data.append({
-                    'id': product['id'],
-                    'name': product['name'],
-                    'url': product['url']
-                })
-
-            # 创建产品基本信息DataFrame
-            products_df = pd.DataFrame(basic_data)
-
-            # 准备规格参数数据（展平规格参数）
-            specs_data = []
-            for product in self.all_products:
-                for param_name, param_value in product['specifications'].items():
-                    specs_data.append({
-                        'product_id': product['id'],
-                        'product_name': product['name'],
-                        'param_name': param_name,
-                        'param_value': param_value
-                    })
-
-            # 创建规格参数DataFrame
-            specs_df = pd.DataFrame(specs_data)
-
-            return products_df, specs_df
-
-        except Exception as e:
-            print(f"准备数据时出错: {str(e)}")
-            return None, None
-
-    def create_excel_file(self, specs_df, product_name_map, output_file):
-        """
-        创建格式化的Excel文件，包含四列：产品ID、产品名称、参数名称、参数值
-
-        Args:
-            specs_df: 规格参数DataFrame
-            product_name_map: 产品ID到名称的映射字典
-            output_file: 输出文件路径
-        """
-        # 获取所有唯一的产品ID
-        product_ids = specs_df['product_id'].unique()
-        print(f"Excel格式化: 发现 {len(product_ids)} 个唯一产品ID")
-
-        # 创建一个新的工作簿
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "产品规格参数"
-
-        # 添加标题行
-        ws.append(["产品ID", "产品名称", "参数名称", "参数值"])
-
-        # 设置单元格边框样式
-        thin_border = Side(border_style="thin", color="000000")
-        border = Border(left=thin_border, right=thin_border, top=thin_border, bottom=thin_border)
-
-        # 遍历每个产品ID
-        row_index = 2  # 从第2行开始（第1行是标题）
-        for product_id in product_ids:
-            # 获取当前产品ID的所有行
-            product_rows = specs_df[specs_df['product_id'] == product_id]
-
-            # 获取产品名称
-            product_name = product_name_map.get(product_id, "未知产品")
-
-            # 记录当前产品的开始行
-            start_row = row_index
-
-            # 添加产品的所有参数行
-            for _, row in product_rows.iterrows():
-                ws.append([product_id, product_name, row['param_name'], row['param_value']])
-
-                # 设置单元格对齐方式和边框
-                for col in range(1, 5):
-                    cell = ws.cell(row=row_index, column=col)
-                    cell.alignment = Alignment(horizontal='left', vertical='center')
-                    cell.border = border
-
-                row_index += 1
-
-            # 合并产品ID列和产品名称列的单元格（如果有多行）
-            if start_row != row_index - 1:
-                ws.merge_cells(f'A{start_row}:A{row_index - 1}')  # 合并产品ID列
-                ws.merge_cells(f'B{start_row}:B{row_index - 1}')  # 合并产品名称列
-
-                # 设置合并后单元格的对齐方式
-                merged_cell_id = ws.cell(row=start_row, column=1)
-                merged_cell_id.alignment = Alignment(horizontal='left', vertical='center')
-
-                merged_cell_name = ws.cell(row=start_row, column=2)
-                merged_cell_name.alignment = Alignment(horizontal='left', vertical='center')
-
-        # 调整列宽
-        ws.column_dimensions['A'].width = 20  # 产品ID
-        ws.column_dimensions['B'].width = 30  # 产品名称
-        ws.column_dimensions['C'].width = 30  # 参数名称
-        ws.column_dimensions['D'].width = 50  # 参数值
-
-        # 保存文件
-        wb.save(output_file)
-        print(f"Excel格式化: 结果已保存到 {output_file}")
-
-    def create_pivot_csv(self, specs_df, output_file):
-        """
-        创建透视表格式的CSV文件，每行一个产品，所有参数作为列
-
-        Args:
-            specs_df: 规格参数DataFrame
-            output_file: 输出文件路径
-        """
-        # 透视表转换 - 将参数名称作为列
-        pivot_df = specs_df.pivot_table(
-            index=['product_id', 'product_name'],
-            columns='param_name',
-            values='param_value',
-            aggfunc='first'
-        ).reset_index()
-
-        # 保存处理后的透视表CSV文件
-        pivot_df.to_csv(output_file, index=False, encoding='utf-8-sig')
-        print(f"透视表格式: 结果已保存到 {output_file}")
-
-    def create_json_file(self, specs_df, output_file):
-        """
-        创建JSON格式文件，每个产品为一个对象，包含参数列表
-
-        Args:
-            specs_df: 规格参数DataFrame
-            output_file: 输出文件路径
-        """
-        # 组装为JSON结构
-        result = []
-        for pid, group in specs_df.groupby('product_id'):
-            name = group['product_name'].iloc[0] if not group['product_name'].isnull().all() else ""
-            params = []
-            for _, row in group.iterrows():
-                params.append({
-                    "paramName": row['param_name'],
-                    "param": row['param_value']
-                })
-            result.append({
-                "product_id": pid,
-                "product_name": name,
-                "params": params
-            })
-
-        # 保存为JSON
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
-
-        print(f"JSON格式: 结果已保存到 {output_file}")
-
-    def process_and_save_data(self):
-        """
-        处理爬取的数据并保存为指定的三种格式
-        """
-        # 1. 准备数据
-        products_df, specs_df = self.prepare_data()
-        if products_df is None or specs_df is None:
-            print("数据准备失败，无法保存")
+    def process_and_save_data(self, products):
+        """处理并保存产品数据"""
+        if not products:
+            print("没有产品数据可保存")
             return
 
-        # 2. 创建产品ID到名称的映射
-        product_name_map = dict(zip(products_df['id'], products_df['name']))
+        # 创建时间戳
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # 3. 生成Excel格式文件（带合并单元格）
-        excel_file = os.path.join(self.data_dir, f'{self.brand_name}_specifications_formatted.xlsx')
-        self.create_excel_file(specs_df, product_name_map, excel_file)
+        # 保存为JSON文件
+        json_path = os.path.join(self.data_dir, f"{self.brand_name}_{timestamp}.json")
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(products, f, ensure_ascii=False, indent=4)
+        print(f"JSON数据已保存至: {json_path}")
 
-        # 4. 生成透视表CSV
-        pivot_file = os.path.join(self.data_dir, f'{self.brand_name}_specifications_pivot.csv')
-        self.create_pivot_csv(specs_df, pivot_file)
+        # 准备DataFrame
+        rows = []
+        for product in products:
+            row = {
+                'brand': self.brand_name,
+                'id': product.get('id', ''),
+                'name': product.get('name', ''),
+                'url': product.get('url', '')
+            }
 
-        # 5. 生成JSON文件
-        json_file = os.path.join(self.data_dir, f'{self.brand_name}_specifications.json')
-        self.create_json_file(specs_df, json_file)
+            # 添加规格参数
+            specs = product.get('specifications', {})
+            for param_name, param_value in specs.items():
+                row[param_name] = param_value
 
-        # 6. 汇总所有生成的文件
-        output_files = {
-            'excel_file': excel_file,
-            'pivot_file': pivot_file,
-            'json_file': json_file
-        }
+            rows.append(row)
 
-        print("\n数据处理完成，已生成以下文件:")
-        for key, file_path in output_files.items():
-            print(f"- {key}: {file_path}")
+        # 创建DataFrame
+        df = pd.DataFrame(rows)
+
+        # 保存为Excel文件
+        excel_path = os.path.join(self.data_dir, f"{self.brand_name}_{timestamp}.xlsx")
+        df.to_excel(excel_path, index=False)
+        print(f"Excel数据已保存至: {excel_path}")
+
+        # 创建透视表（按参数名称）
+        try:
+            # 创建参数透视表
+            param_columns = [col for col in df.columns if col not in ['brand', 'id', 'name', 'url']]
+            if param_columns:
+                pivot_df = pd.melt(df,
+                                   id_vars=['brand', 'id', 'name', 'url'],
+                                   value_vars=param_columns,
+                                   var_name='parameter',
+                                   value_name='value')
+
+                # 删除空值行
+                pivot_df = pivot_df.dropna(subset=['value'])
+
+                # 保存为CSV文件
+                pivot_path = os.path.join(self.data_dir, f"{self.brand_name}_pivot_{timestamp}.csv")
+                pivot_df.to_csv(pivot_path, index=False)
+                print(f"透视表数据已保存至: {pivot_path}")
+        except Exception as e:
+            print(f"创建透视表时出错: {str(e)}")
+
+    def run(self):
+        """运行爬虫"""
+        print(f"开始爬取 {self.brand_name} 产品数据...")
+
+        all_products = []
+        for start_url in self.start_urls:
+            # 获取产品链接
+            product_links = self.process_category_page(start_url)
+
+            # 爬取每个产品页面
+            for link in product_links:
+                product_data = self.extract_product_details(link)
+                if product_data:
+                    all_products.append(product_data)
+                    print(f"成功爬取产品: {product_data.get('id', 'unknown')} - {product_data.get('name', 'unknown')}")
+
+        # 保存数据
+        if all_products:
+            print(f"总共爬取了 {len(all_products)} 个产品")
+            self.process_and_save_data(all_products)
+        else:
+            print("未爬取到任何产品数据")
+
+        # 关闭WebDriver（如果已初始化）
+        self.close()
+
+        print(f"{self.brand_name} 爬虫任务完成!")
+
+    def close(self):
+        """关闭爬虫，释放资源"""
+        if self.use_selenium and hasattr(self, 'driver'):
+            self.driver.quit()
+            print("WebDriver已关闭")
