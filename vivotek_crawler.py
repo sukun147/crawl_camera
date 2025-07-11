@@ -4,7 +4,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import requests
-from bs4 import BeautifulSoup
+from parsel import Selector
 
 
 class VivotekCrawler(BaseCrawler):
@@ -25,19 +25,15 @@ class VivotekCrawler(BaseCrawler):
         # 不使用起始URL列表，而是在process_category_page中处理
         self.start_urls = ["https://www.vivotek.com/products/network_cameras"]
 
-        # 打印当前时间和用户
-        print("Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-07-11 09:19:57")
-        print("Current User's Login: sukun147")
-
-    def get_soup_by_requests(self, url):
+    def get_selector_by_requests(self, url):
         """
-        使用requests和BeautifulSoup获取页面内容
+        使用requests和Parsel获取页面内容
 
         Args:
             url: 要获取的URL
 
         Returns:
-            BeautifulSoup对象
+            Selector对象
         """
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
@@ -45,8 +41,8 @@ class VivotekCrawler(BaseCrawler):
         try:
             resp = requests.get(url, headers=headers, timeout=20)
             resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, "lxml")
-            return soup
+            selector = Selector(text=resp.text)
+            return selector
         except Exception as e:
             print(f"获取页面内容时出错 {url}: {str(e)}")
             return None
@@ -59,14 +55,14 @@ class VivotekCrawler(BaseCrawler):
             分类页面链接列表
         """
         url = self.start_urls[0]
-        soup = self.get_soup_by_requests(url)
-        if not soup:
+        selector = self.get_selector_by_requests(url)
+        if not selector:
             return []
 
-        cards = soup.select("frontend-cards-general > a")
+        cards = selector.css("frontend-cards-general > a")
         links = []
         for card in cards:
-            href = card.get("href")
+            href = card.attrib.get("href")
             if href and not href.startswith("http"):
                 href = f"{self.base_url}{href}"
             links.append(href)
@@ -82,14 +78,14 @@ class VivotekCrawler(BaseCrawler):
         Returns:
             产品页面链接列表
         """
-        soup = self.get_soup_by_requests(card_url)
-        if not soup:
+        selector = self.get_selector_by_requests(card_url)
+        if not selector:
             return []
 
-        prods = soup.select("frontend-product-card > a")
+        prods = selector.css("frontend-product-card > a")
         links = []
         for prod in prods:
-            href = prod.get("href")
+            href = prod.attrib.get("href")
             if href and not href.startswith("http"):
                 href = f"{self.base_url}{href}"
             links.append(href)
