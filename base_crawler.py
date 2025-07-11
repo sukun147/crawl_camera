@@ -85,7 +85,7 @@ class BaseCrawler:
                 product_data = self.extract_product_details(link)
                 if product_data:
                     all_products.append(product_data)
-                    print(f"成功爬取产品: {product_data.get('id', 'unknown')} - {product_data.get('name', 'unknown')}")
+                    print(f"成功爬取产品: {product_data.get('product_id', 'unknown')} - {product_data.get('product_name', 'unknown')}")
 
         # 保存数据
         if all_products:

@@ -1,11 +1,10 @@
-from base_crawler import BaseCrawler
 import time
-import json
-import os
-from datetime import datetime
+
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
+
+from base_crawler import BaseCrawler
 
 
 class DahuaCrawler(BaseCrawler):

@@ -17,7 +17,8 @@ class EverFocusCrawler(BaseCrawler):
 
         # 设置起始URL（网络摄像机分类页面）
         self.start_urls = [
-            "https://www.everfocus.com/tw/product/catalog.php?index_m1_id=3&index_m2_id=25&index_m3_id=76"]
+            "https://www.everfocus.com/tw/product/catalog.php?index_m1_id=3&index_m2_id=25&index_m3_id=76"
+        ]
 
     def get_links_from_page(self, url, selector=None):
         """使用Selenium获取页面中的产品链接"""
