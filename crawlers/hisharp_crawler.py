@@ -7,7 +7,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import requests
 from parsel import Selector
 
-from base_crawler import BaseCrawler
+from .base_crawler import BaseCrawler
 
 
 class HisharpCrawler(BaseCrawler):

@@ -1,6 +1,7 @@
 import json
 import os
 import logging
+import sys
 from abc import ABC, abstractmethod
 
 from selenium import webdriver
@@ -22,13 +23,11 @@ class BaseCrawler(ABC):
         self.data_dir = data_dir
         self.use_selenium = use_selenium
 
+        # 确保数据目录存在
+        self._ensure_dir_exists(data_dir)
+
         # 设置日志
         self.logger = self._setup_logger()
-
-        # 确保数据目录存在
-        if not os.path.exists(data_dir):
-            os.makedirs(data_dir)
-            self.logger.info(f"创建数据目录: {data_dir}")
 
         # 只有在需要使用Selenium时才初始化WebDriver
         if self.use_selenium:
@@ -38,30 +37,42 @@ class BaseCrawler(ABC):
         self.base_url = ""
         self.start_urls = []
 
+    def _ensure_dir_exists(self, directory):
+        """确保目录存在，如果不存在则创建"""
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+            print(f"创建目录: {directory}")
+
     def _setup_logger(self):
-        """设置日志记录器"""
+        """设置日志记录器，使用UTF-8编码"""
         logger = logging.getLogger(f"{self.brand_name}_crawler")
         logger.setLevel(logging.INFO)
 
-        # 创建控制台处理器
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
+        # 如果logger已经有处理器，不再添加新的处理器
+        if logger.handlers:
+            return logger
 
-        # 创建文件处理器
-        log_dir = os.path.join(self.data_dir, "logs")
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        file_handler = logging.FileHandler(os.path.join(log_dir, f"{self.brand_name}.log"))
-        file_handler.setLevel(logging.INFO)
+        # 创建控制台处理器
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
 
         # 创建格式化器
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         console_handler.setFormatter(formatter)
-        file_handler.setFormatter(formatter)
 
-        # 添加处理器到日志记录器
+        # 添加控制台处理器
         logger.addHandler(console_handler)
+
+        # 创建文件处理器
+        log_dir = "logs"
+        self._ensure_dir_exists(log_dir)
+
+        log_file_path = os.path.join(log_dir, f"{self.brand_name}.log")
+        file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
+        logger.info(f"日志将保存到: {log_file_path}")
 
         return logger
 
@@ -69,7 +80,7 @@ class BaseCrawler(ABC):
         """初始化WebDriver（仅在use_selenium=True时调用）"""
         # 设置Chrome选项
         chrome_options = Options()
-        chrome_options.add_argument("--headless")  # 无头模式
+        # chrome_options.add_argument("--headless")  # 无头模式
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
@@ -108,9 +119,12 @@ class BaseCrawler(ABC):
 
         # 保存为JSON文件
         json_path = os.path.join(self.data_dir, f"{self.brand_name}.json")
-        with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(products, f, ensure_ascii=False, indent=4)
-        self.logger.info(f"JSON数据已保存至: {json_path}")
+        try:
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(products, f, ensure_ascii=False, indent=4)
+            self.logger.info(f"JSON数据已保存至: {json_path}")
+        except Exception as e:
+            self.logger.error(f"保存JSON数据到 {json_path} 时出错: {str(e)}")
 
     def run(self):
         """运行爬虫"""

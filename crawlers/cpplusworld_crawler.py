@@ -2,7 +2,7 @@ import requests
 from urllib.parse import urljoin
 from parsel import Selector
 
-from base_crawler import BaseCrawler
+from .base_crawler import BaseCrawler
 
 
 class CPlusWorldCrawler(BaseCrawler):

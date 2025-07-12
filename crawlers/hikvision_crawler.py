@@ -4,7 +4,7 @@ from urllib.parse import urljoin
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 
-from base_crawler import BaseCrawler
+from .base_crawler import BaseCrawler
 
 
 class HikvisionCrawler(BaseCrawler):
