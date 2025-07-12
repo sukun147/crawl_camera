@@ -8,7 +8,14 @@ from base_crawler import BaseCrawler
 
 
 class HikvisionCrawler(BaseCrawler):
+    """
+    Hikvision网站爬虫，继承自BaseCrawler
+    """
+
     def __init__(self, data_dir="data"):
+        """
+        初始化Hikvision爬虫
+        """
         # 调用父类初始化方法
         super().__init__(brand_name="hikvision", data_dir=data_dir)
 

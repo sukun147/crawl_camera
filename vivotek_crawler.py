@@ -27,7 +27,7 @@ class VivotekCrawler(BaseCrawler):
         # 不使用起始URL列表，而是在process_category_page中处理
         self.start_urls = ["https://www.vivotek.com/products/network_cameras"]
 
-    def get_selector_by_requests(self, url):
+    def get_selector(self, url):
         """
         使用requests和Parsel获取页面内容
 
@@ -37,61 +37,56 @@ class VivotekCrawler(BaseCrawler):
         Returns:
             Selector对象
         """
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
         try:
-            resp = requests.get(url, headers=headers, timeout=20)
+            resp = requests.get(url, timeout=10)
             resp.raise_for_status()
             selector = Selector(text=resp.text)
             return selector
         except Exception as e:
-            print(f"获取页面内容时出错 {url}: {str(e)}")
+            self.logger.error(f"获取页面内容时出错 {url}: {str(e)}")
             return None
 
-    def get_card_links(self):
+    def get_links_from_page(self, url, selector=None):
         """
-        获取所有产品分类卡片链接
-
-        Returns:
-            分类页面链接列表
-        """
-        url = self.start_urls[0]
-        selector = self.get_selector_by_requests(url)
-        if not selector:
-            return []
-
-        cards = selector.css("frontend-cards-general > a")
-        links = []
-        for card in cards:
-            href = card.attrib.get("href")
-            if href and not href.startswith("http"):
-                href = f"{self.base_url}{href}"
-            links.append(href)
-        return links
-
-    def get_product_links(self, card_url):
-        """
-        从分类页面获取产品链接
+        获取页面中的链接，根据URL类型自动判断是获取分类卡片还是产品链接
 
         Args:
-            card_url: 分类页面URL
+            url: 页面URL
+            selector: 选择器对象，如果为None则会自动获取
 
         Returns:
-            产品页面链接列表
+            链接列表
         """
-        selector = self.get_selector_by_requests(card_url)
-        if not selector:
-            return []
+        # 如果没有提供selector，则自动获取
+        if selector is None:
+            selector = self.get_selector(url)
+            if not selector:
+                self.logger.error(f"无法获取页面选择器 {url}")
+                return []
 
-        prods = selector.css("frontend-product-card > a")
-        links = []
-        for prod in prods:
-            href = prod.attrib.get("href")
-            if href and not href.startswith("http"):
-                href = f"{self.base_url}{href}"
-            links.append(href)
-        return links
+        # 根据URL类型选择不同的链接提取方法
+        if url == self.start_urls[0]:
+            # 处理主分类页面，获取分类卡片链接
+            cards = selector.css("frontend-cards-general > a")
+            links = []
+            for card in cards:
+                href = card.attrib.get("href")
+                if href and not href.startswith("http"):
+                    href = f"{self.base_url}{href}"
+                links.append(href)
+            self.logger.info(f"获取到 {len(links)} 个分类卡片链接")
+            return links
+        else:
+            # 处理分类页面，获取产品链接
+            prods = selector.css("frontend-product-card > a")
+            links = []
+            for prod in prods:
+                href = prod.attrib.get("href")
+                if href and not href.startswith("http"):
+                    href = f"{self.base_url}{href}"
+                links.append(href)
+            self.logger.info(f"从分类页面 {url} 获取到 {len(links)} 个产品链接")
+            return links
 
     def extract_product_details(self, url):
         """
@@ -114,10 +109,10 @@ class VivotekCrawler(BaseCrawler):
                 id_elem = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "h1.mt-4")))
                 prod_id = id_elem.text.strip()
                 if not prod_id:
-                    print(f"产品ID为空 {url}")
+                    self.logger.warning(f"产品ID为空 {url}")
                     return None
             except (TimeoutException, NoSuchElementException) as e:
-                print(f"无法获取产品ID {url}: {str(e)}")
+                self.logger.error(f"无法获取产品ID {url}: {str(e)}")
                 return None
 
             # 获取产品名称
@@ -125,10 +120,10 @@ class VivotekCrawler(BaseCrawler):
                 name_elem = self.driver.find_element(By.CSS_SELECTOR, "h3.mt-2")
                 prod_name = name_elem.text.strip()
                 if not prod_name:
-                    print(f"产品名称为空 {url}")
+                    self.logger.warning(f"产品名称为空 {url}")
                     return None
             except (TimeoutException, NoSuchElementException) as e:
-                print(f"无法获取产品名称 {url}: {str(e)}")
+                self.logger.error(f"无法获取产品名称 {url}: {str(e)}")
                 return None
 
             # 点击规格参数按钮
@@ -138,7 +133,7 @@ class VivotekCrawler(BaseCrawler):
                 self.driver.execute_script("arguments[0].click();", btn)
                 time.sleep(2)  # 等待参数加载
             except Exception as e:
-                print(f"点击规格按钮时出错 {url}: {str(e)}")
+                self.logger.warning(f"点击规格按钮时出错 {url}: {str(e)}")
                 # 继续尝试获取参数
 
             # 获取规格参数
@@ -165,26 +160,25 @@ class VivotekCrawler(BaseCrawler):
 
                 # 检查是否提取到参数
                 if not params:
-                    print(f"未提取到任何规格参数 {url}")
+                    self.logger.warning(f"未提取到任何规格参数 {url}")
                     return None
 
             except Exception as e:
-                print(f"提取规格参数时出错 {url}: {str(e)}")
+                self.logger.error(f"提取规格参数时出错 {url}: {str(e)}")
                 return None
 
             # 准备产品数据
             product_data = {
                 'product_id': prod_id,
                 'product_name': prod_name,
-                'url': url,
                 'params': params
             }
 
-            print(f"✓ 成功提取产品信息: {prod_name} ({prod_id})")
+            self.logger.info(f"成功提取产品信息: {prod_name} ({prod_id})")
             return product_data
 
         except Exception as e:
-            print(f"提取产品详情时出错 {url}: {str(e)}")
+            self.logger.error(f"提取产品详情时出错 {url}: {str(e)}")
             return None
 
     def process_category_page(self, url):
@@ -201,20 +195,14 @@ class VivotekCrawler(BaseCrawler):
         all_product_links = []
 
         # 获取所有分类卡片
-        card_links = self.get_card_links()
-        print(f"共获取到{len(card_links)}个大类页面")
+        card_links = self.get_links_from_page(self.start_urls[0])
+        self.logger.info(f"共获取到{len(card_links)}个大类页面")
 
         # 从每个卡片获取产品链接
         for card_link in card_links:
-            product_links = self.get_product_links(card_link)
-            print(f"处理大类页面: {card_link}，产品数量: {len(product_links)}")
+            product_links = self.get_links_from_page(card_link)
+            self.logger.info(f"处理大类页面: {card_link}，产品数量: {len(product_links)}")
             all_product_links.extend(product_links)
 
-        print(f"所有类别共找到 {len(all_product_links)} 个产品链接")
+        self.logger.info(f"所有类别共找到 {len(all_product_links)} 个产品链接")
         return all_product_links
-
-
-if __name__ == "__main__":
-    data_dir = "data"  # 默认数据目录
-    crawler = VivotekCrawler(data_dir=data_dir)
-    crawler.run()
