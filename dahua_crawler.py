@@ -1,4 +1,7 @@
 import time
+import requests
+from urllib.parse import urljoin
+from parsel import Selector
 
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
 from selenium.webdriver.common.by import By
@@ -24,10 +27,65 @@ class DahuaCrawler(BaseCrawler):
 
         # 设置起始页面列表
         self.start_urls = [
-            "https://www.dahuatech.com/product/lists/14.html",
-            "https://www.dahuatech.com/product/lists/19.html",
-            "https://www.dahuatech.com/product/lists/1467.html"
+            "https://www.dahuatech.com/product/lists/14",
+            "https://www.dahuatech.com/product/lists/19",
+            "https://www.dahuatech.com/product/lists/1467",
+            "https://www.dahuatech.com/product/lists/1491",
+            "https://www.dahuatech.com/product/lists/1492"
         ]
+
+    def get_selector(self, url):
+        """
+        使用requests获取页面的Selector对象
+
+        Args:
+            url: 要获取内容的URL
+
+        Returns:
+            Selector对象，失败则返回None
+        """
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            return Selector(text=response.text)
+        except Exception as e:
+            self.logger.error(f"获取页面内容时出错 {url}: {str(e)}")
+            return None
+
+    def get_links_from_page(self, url, selector=None):
+        """
+        从页面获取链接，使用requests而非selenium
+
+        Args:
+            url: 页面URL
+            selector: CSS选择器，默认为.product-list-b > ul > li > p > a
+
+        Returns:
+            链接列表
+        """
+        if selector is None:
+            selector = ".product-list-b > ul > li > p > a"
+
+        try:
+            page_selector = self.get_selector(url)
+            if not page_selector:
+                return []
+
+            links = []
+            elements = page_selector.css(selector)
+
+            for element in elements:
+                href = element.attrib.get('href')
+                if href:
+                    # 处理相对URL
+                    full_url = urljoin(self.base_url, href)
+                    links.append(full_url)
+
+            self.logger.debug(f"从页面 {url} 获取到 {len(links)} 个链接")
+            return links
+        except Exception as e:
+            self.logger.error(f"获取链接时出错 {url}: {str(e)}")
+            return []
 
     def extract_product_details(self, url):
         """
@@ -52,10 +110,10 @@ class DahuaCrawler(BaseCrawler):
                 name = name_element.text.strip()
 
                 if not product_id or not name:
-                    print(f"产品ID或名称为空 {url}")
+                    self.logger.warning(f"产品ID或名称为空 {url}")
                     return None
             except (TimeoutException, NoSuchElementException) as e:
-                print(f"无法获取产品ID或名称 {url}: {str(e)}")
+                self.logger.error(f"无法获取产品ID或名称 {url}: {str(e)}")
                 return None
 
             # 点击规格参数按钮 - 使用li[data-id="2"]选择器
@@ -68,14 +126,14 @@ class DahuaCrawler(BaseCrawler):
                 spec_tab.click()
                 time.sleep(1.5)  # 延长等待时间，确保参数加载
             except (TimeoutException, NoSuchElementException, ElementClickInterceptedException) as e:
-                print(f"常规点击规格参数按钮失败 {url}: {str(e)}")
+                self.logger.warning(f"常规点击规格参数按钮失败 {url}: {str(e)}")
                 # 尝试JavaScript点击
                 try:
                     spec_tab = self.driver.find_element(By.CSS_SELECTOR, "li[data-id=\"2\"]")
                     self.driver.execute_script("arguments[0].click();", spec_tab)
                     time.sleep(1.5)
                 except Exception as js_e:
-                    print(f"JavaScript点击规格参数按钮失败 {url}: {str(js_e)}")
+                    self.logger.warning(f"JavaScript点击规格参数按钮失败 {url}: {str(js_e)}")
                     # 如果还是不行，继续但可能无法获取参数
 
             # 获取规格参数
@@ -101,35 +159,35 @@ class DahuaCrawler(BaseCrawler):
                                     "param": param_value
                                 })
                         except Exception as param_e:
-                            print(f"提取参数项时出错 {url}: {str(param_e)}")
+                            self.logger.debug(f"提取参数项时出错: {str(param_e)}")
                             continue
 
                 # 检查是否提取到参数
                 if not params:
-                    print(f"未提取到任何规格参数 {url}")
+                    self.logger.warning(f"未提取到任何规格参数 {url}")
                     return None
 
             except Exception as e:
-                print(f"提取规格参数时出错 {url}: {str(e)}")
+                self.logger.error(f"提取规格参数时出错 {url}: {str(e)}")
                 return None
 
-            # 准备产品数据（新格式）
+            # 准备产品数据
             product_data = {
                 'product_id': product_id,
                 'product_name': name,
                 'params': params
             }
 
-            print(f"✓ 成功提取产品信息: {name} ({product_id})")
+            self.logger.info(f"成功提取产品信息: {name} ({product_id})")
             return product_data
 
         except Exception as e:
-            print(f"提取产品详情时出错 {url}: {str(e)}")
+            self.logger.error(f"提取产品详情时出错 {url}: {str(e)}")
             return None
 
     def process_category_page(self, url):
         """
-        处理大华类别页面并处理分页
+        处理大华类别页面并处理分页，使用requests获取页面内容
 
         Args:
             url: 类别页面URL
@@ -138,44 +196,50 @@ class DahuaCrawler(BaseCrawler):
             该类别下所有产品链接的列表
         """
         all_product_links = []
-        current_url = url
-        page_count = 1
 
-        while True:
-            print(f"正在处理第 {page_count} 页: {current_url}")
+        # 获取首页内容
+        self.logger.info(f"处理类别页面: {url}")
+        selector = self.get_selector(url)
+        if not selector:
+            self.logger.error(f"无法获取类别页面内容: {url}")
+            return all_product_links
 
-            # 获取当前页面的产品链接
-            product_links = self.get_links_from_page(current_url, ".product-list-b > ul > li > p > a")
-            all_product_links.extend(product_links)
+        # 获取第一页的产品链接
+        product_links = self.get_links_from_page(url)
+        all_product_links.extend(product_links)
+        self.logger.info(f"在第1页找到 {len(product_links)} 个产品链接")
 
-            print(f"在当前页面找到 {len(product_links)} 个产品链接")
+        # 检查是否存在分页
+        pagination = selector.css('div.news-page')
+        if not pagination:
+            self.logger.info(f"类别页面 {url} 没有分页")
+            return all_product_links
 
-            # 检查是否有下一页
+        # 获取总页数
+        try:
+            # 找到分页中倒数第二个a标签
+            page_links = pagination.css('a')
+            if len(page_links) >= 2:
+                total_pages = int(page_links[-2].css('::text').get('').strip())
+                self.logger.info(f"类别页面 {url} 共有 {total_pages} 页")
+            else:
+                self.logger.info(f"类别页面 {url} 只有一页")
+                return all_product_links
+        except Exception as e:
+            self.logger.error(f"获取总页数出错: {str(e)}")
+            return all_product_links
+
+        # 处理后续页面
+        for page in range(2, total_pages + 1):
+            page_url = f"{url}/{page}.html"
+            self.logger.info(f"处理第 {page} 页: {page_url}")
+
             try:
-                self.driver.get(current_url)
-                time.sleep(1)
-
-                next_button = self.driver.find_elements(By.CSS_SELECTOR, ".next.btns")
-
-                if next_button and len(next_button) > 0 and "disabled" not in next_button[0].get_attribute("class"):
-                    # 点击下一页按钮
-                    next_button[0].click()
-                    time.sleep(2)
-                    current_url = self.driver.current_url
-                    page_count += 1
-                else:
-                    print("没有找到下一页按钮或已到最后一页")
-                    break
+                page_links = self.get_links_from_page(page_url)
+                all_product_links.extend(page_links)
+                self.logger.info(f"在第 {page} 页找到 {len(page_links)} 个产品链接")
             except Exception as e:
-                print(f"检查下一页时出错: {str(e)}")
-                break
+                self.logger.error(f"处理第 {page} 页时出错: {str(e)}")
 
-        print(f"类别 {url} 共找到 {len(all_product_links)} 个产品链接")
+        self.logger.info(f"类别 {url} 共找到 {len(all_product_links)} 个产品链接")
         return all_product_links
-
-
-if __name__ == "__main__":
-    # 创建爬虫实例并运行
-    data_dir = "data"  # 默认数据目录
-    crawler = DahuaCrawler(data_dir=data_dir)
-    crawler.run()
