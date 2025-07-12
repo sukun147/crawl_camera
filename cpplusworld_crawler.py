@@ -38,7 +38,7 @@ class CPlusWorldCrawler(BaseCrawler):
             response.raise_for_status()  # 如果响应状态码不是200，抛出异常
             return Selector(text=response.text)
         except Exception as e:
-            print(f"获取页面内容时出错 {url}: {str(e)}")
+            self.logger.error(f"获取页面内容时出错 {url}: {str(e)}")
             return None
 
     def get_links_from_page(self, url, selector=None):
@@ -58,6 +58,7 @@ class CPlusWorldCrawler(BaseCrawler):
             return links
 
         content_divs = selector.css('.search-content > div > div')
+        self.logger.debug(f"在页面 {url} 找到 {len(content_divs)} 个内容div")
 
         for div in content_divs:
             h4_with_a = div.css('.section-title > a')
@@ -70,17 +71,22 @@ class CPlusWorldCrawler(BaseCrawler):
                     sub_selector = self.get_selector(full_url)
                     if sub_selector:
                         item_image = sub_selector.css('a.item-image')
-                        if item_image and 'href' in item_image.attrib:
+                        if item_image:
                             for item in item_image:
-                                product_url = urljoin(self.base_url, item.attrib['href'])
-                                links.append(product_url)
+                                product_url = urljoin(self.base_url, item.attrib.get('href', ''))
+                                if product_url and product_url not in links:
+                                    links.append(product_url)
+                                    self.logger.debug(f"添加产品链接: {product_url}")
             else:
                 # 如果h4下没有a标签，直接获取a.item-image的href
                 item_image = div.css('a.item-image')
                 if item_image and 'href' in item_image.attrib:
                     product_url = urljoin(self.base_url, item_image.attrib['href'])
-                    links.append(product_url)
+                    if product_url and product_url not in links:
+                        links.append(product_url)
+                        self.logger.debug(f"添加产品链接: {product_url}")
 
+        self.logger.info(f"从页面 {url} 共获取到 {len(links)} 个链接")
         return links
 
     def extract_product_details(self, url):
@@ -101,14 +107,14 @@ class CPlusWorldCrawler(BaseCrawler):
             # 获取产品ID (产品标题)
             product_title = selector.css('.product-title::text').get()
             if not product_title:
-                print(f"无法获取产品ID {url}")
+                self.logger.warning(f"无法获取产品ID {url}")
                 return None
             product_id = product_title.strip()
 
             # 获取产品名称
             product_name = selector.css('.product-info-header > p::text').get()
             if not product_name:
-                print(f"无法获取产品名称 {url}")
+                self.logger.warning(f"无法获取产品名称 {url}")
                 product_name = "未知名称"
             else:
                 product_name = product_name.strip()
@@ -116,6 +122,7 @@ class CPlusWorldCrawler(BaseCrawler):
             # 获取参数表格
             params = []
             table_rows = selector.css('.table-product > tr')
+            self.logger.debug(f"找到 {len(table_rows)} 行参数数据")
 
             for row in table_rows:
                 # 获取参数名称和值
@@ -124,12 +131,14 @@ class CPlusWorldCrawler(BaseCrawler):
                     param_name = cells[0].css('strong::text').get()
                     if param_name:
                         param_name = param_name.strip()
-                        param_value = cells[1].css('::text').get().strip()
+                        param_value = cells[1].css('::text').get('').strip()
 
-                        params.append({
-                            "paramName": param_name,
-                            "param": param_value
-                        })
+                        if param_name and param_value:
+                            params.append({
+                                "paramName": param_name,
+                                "param": param_value
+                            })
+                            self.logger.debug(f"提取参数: {param_name} = {param_value}")
 
             # 构建产品数据
             product_data = {
@@ -138,9 +147,10 @@ class CPlusWorldCrawler(BaseCrawler):
                 'params': params
             }
 
+            self.logger.info(f"成功提取产品信息: {product_name} ({product_id})")
             return product_data
         except Exception as e:
-            print(f"提取产品详情时出错 {url}: {str(e)}")
+            self.logger.error(f"提取产品详情时出错 {url}: {str(e)}")
             return None
 
     def process_category_page(self, url):
@@ -153,9 +163,7 @@ class CPlusWorldCrawler(BaseCrawler):
         Returns:
             产品链接列表
         """
-        return self.get_links_from_page(url)
-
-
-if __name__ == "__main__":
-    crawler = CPlusWorldCrawler()
-    crawler.run()
+        self.logger.info(f"处理分类页面: {url}")
+        links = self.get_links_from_page(url)
+        self.logger.info(f"从分类页面 {url} 获取到 {len(links)} 个产品链接")
+        return links
