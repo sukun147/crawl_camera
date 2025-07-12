@@ -18,10 +18,13 @@ class HikvisionCrawler(BaseCrawler):
         # 设置起始URL
         self.start_urls = ["https://www.hikvision.com/cn/products/front-end-product/"]
 
+        self.logger.info(f"HikvisionCrawler初始化完成，基础URL: {self.base_url}")
+
     def extract_product_details(self, url):
         """从产品页面提取产品详情"""
         try:
             self.driver.get(url)
+            self.logger.info(f"正在加载产品页面: {url}")
             time.sleep(2)  # 等待页面加载
 
             # 获取产品名称和ID
@@ -31,9 +34,12 @@ class HikvisionCrawler(BaseCrawler):
             id_element = self.driver.find_element(By.CSS_SELECTOR, ".model > span")
             product_id = id_element.text.strip()
 
+            self.logger.info(f"找到产品: {name} (ID: {product_id})")
+
             # 获取规格参数
             params = []
             spec_elements = self.driver.find_elements(By.CSS_SELECTOR, ".tech-specs-accordion-content-desc ul")
+            self.logger.info(f"找到 {len(spec_elements)} 个规格参数区块")
 
             for ul in spec_elements:
                 li_elements = ul.find_elements(By.TAG_NAME, "li")
@@ -49,7 +55,7 @@ class HikvisionCrawler(BaseCrawler):
                                 "param": param_value
                             })
                     except Exception as e:
-                        print(f"提取参数时出错 {url}: {str(e)}")
+                        self.logger.warning(f"提取参数时出错 {url}: {str(e)}")
 
             # 准备产品数据
             product_data = {
@@ -58,10 +64,11 @@ class HikvisionCrawler(BaseCrawler):
                 'params': params
             }
 
+            self.logger.info(f"成功提取产品详情，共 {len(params)} 个参数")
             return product_data
 
         except Exception as e:
-            print(f"提取产品详情时出错 {url}: {str(e)}")
+            self.logger.error(f"提取产品详情时出错 {url}: {str(e)}")
             return None
 
     def get_links_from_page(self, url, selector, mode=True):
@@ -70,9 +77,12 @@ class HikvisionCrawler(BaseCrawler):
         try:
             if mode:
                 self.driver.get(url)
+                self.logger.info(f"正在加载页面: {url}")
                 time.sleep(2)  # 等待页面加载
 
             elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+            self.logger.info(f"找到 {len(elements)} 个潜在链接元素")
+
             for element in elements:
                 href = element.get_attribute('href')
                 if href:
@@ -93,9 +103,10 @@ class HikvisionCrawler(BaseCrawler):
                         except:
                             pass
 
+            self.logger.info(f"成功提取 {len(links)} 个链接")
             return links
         except Exception as e:
-            print(f"获取链接时出错 {url}: {str(e)}")
+            self.logger.error(f"获取链接时出错 {url}: {str(e)}")
             return []
 
     def process_category_page(self, url):
@@ -103,15 +114,15 @@ class HikvisionCrawler(BaseCrawler):
         # 如果是主页，需要先获取所有类别链接，然后获取子类别链接
         if url == self.start_urls[0]:
             category_links = self.get_links_from_page(url, ".tile-card")
-            print(f"在主页上找到 {len(category_links)} 个类别链接")
+            self.logger.info(f"在主页上找到 {len(category_links)} 个类别链接")
 
             subcategory_links = []
             for link in category_links:
                 sub_links = self.get_links_from_page(link, ".tile-card")
                 subcategory_links.extend(sub_links)
-                print(f"从 {link} 找到 {len(sub_links)} 个子类别链接")
+                self.logger.info(f"从 {link} 找到 {len(sub_links)} 个子类别链接")
 
-            print(f"子类别链接总数: {len(subcategory_links)}")
+            self.logger.info(f"子类别链接总数: {len(subcategory_links)}")
 
             # 从所有子类别链接中获取产品链接
             all_product_links = []
@@ -131,37 +142,42 @@ class HikvisionCrawler(BaseCrawler):
         # 处理第一页
         page_product_links = self.get_links_from_page(url, ".btn-details-link")
         product_links.extend(page_product_links)
+        self.logger.info(f"第1页找到 {len(page_product_links)} 个产品链接")
 
         # 检查分页
         try:
             self.driver.get(url)
             pagination_elements = self.driver.find_elements(By.CSS_SELECTOR, ".paginationjs-pages > ul > li")
+            self.logger.info(f"找到 {len(pagination_elements)} 个分页元素")
 
             # 如果有分页并且元素数量大于3（排除上一页、当前页和下一页）
             if len(pagination_elements) > 3:
                 page_num = int(pagination_elements[-2].get_attribute("data-num"))
-                for page_idx in range(1, page_num):
+                self.logger.info(f"总共有 {page_num} 页需要处理")
+
+                for page_idx in range(2, page_num + 1):
                     try:
                         # 找到并点击分页元素
                         pagination_elements = self.driver.find_elements(By.CSS_SELECTOR,
                                                                         ".paginationjs-pages > ul > li")
                         page_element = pagination_elements[-1]
+                        self.logger.info(f"点击下一页按钮，处理第 {page_idx} 页")
                         page_element.click()
                         time.sleep(3)  # 点击后等待页面加载
 
                         # 获取新页面中的产品链接
-                        page_product_links = self.get_links_from_page(self.driver.current_url, ".btn-details-link", False)
+                        page_product_links = self.get_links_from_page(self.driver.current_url, ".btn-details-link",
+                                                                      False)
                         product_links.extend(page_product_links)
+                        self.logger.info(f"第 {page_idx} 页找到 {len(page_product_links)} 个产品链接")
 
                     except Exception as e:
-                        print(f"处理分页 {page_idx + 1} 时出错 {url}: {str(e)}")
+                        self.logger.error(f"处理分页 {page_idx} 时出错 {url}: {str(e)}")
+            else:
+                self.logger.info("没有找到分页元素或只有一页")
 
         except Exception as e:
-            print(f"检查分页时出错 {url}: {str(e)}")
+            self.logger.error(f"检查分页时出错 {url}: {str(e)}")
 
+        self.logger.info(f"该类别页面共找到 {len(product_links)} 个产品链接")
         return product_links
-
-
-if __name__ == "__main__":
-    crawler = HikvisionCrawler()
-    crawler.run()
