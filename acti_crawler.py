@@ -28,6 +28,8 @@ class ActiCrawler(BaseCrawler):
         # 设置起始URL
         self.start_urls = ["https://www.acti.com"]
 
+        self.logger.info("ACTI爬虫初始化完成")
+
     def get_selector(self, url):
         """
         使用requests和Parsel获取页面内容
@@ -44,28 +46,33 @@ class ActiCrawler(BaseCrawler):
             selector = Selector(text=resp.text)
             return selector
         except Exception as e:
-            print(f"获取页面内容时出错 {url}: {str(e)}")
+            self.logger.error(f"获取页面内容时出错 {url}: {str(e)}")
             return None
 
-    def process_category_page(self, url):
+    def get_links_from_page(self, url, selector=None):
         """
-        处理起始页面并获取产品链接
+        从页面获取产品链接
 
         Args:
-            url: 起始页面URL
+            url: 页面URL
+            selector: 可选的选择器，如果为None则会调用get_selector获取
 
         Returns:
             产品链接列表
         """
-        print(f"正在处理类别页面: {url}")
-        selector = self.get_selector(url)
+        self.logger.info(f"从页面获取产品链接: {url}")
+
+        # 如果没有提供选择器，则获取一个
+        if selector is None:
+            selector = self.get_selector(url)
+
         if not selector:
             return []
 
         # 获取第二个.carousel-container
         carousel_containers = selector.css('.carousel-container')
         if len(carousel_containers) < 2:
-            print("找不到第二个.carousel-container")
+            self.logger.warning("找不到第二个.carousel-container")
             return []
 
         # 获取第二个carousel-container
@@ -83,8 +90,21 @@ class ActiCrawler(BaseCrawler):
                     href = urljoin(self.base_url, href)
                 product_links.append(href)
 
-        print(f"找到 {len(product_links)} 个产品链接")
+        self.logger.info(f"找到 {len(product_links)} 个产品链接")
         return product_links
+
+    def process_category_page(self, url):
+        """
+        处理类别页面
+
+        Args:
+            url: 类别页面URL
+
+        Returns:
+            产品链接列表
+        """
+        self.logger.info(f"处理类别页面: {url}")
+        return self.get_links_from_page(url)
 
     def extract_product_details(self, url):
         """
@@ -99,6 +119,7 @@ class ActiCrawler(BaseCrawler):
         try:
             # 拼接规格参数URL
             spec_url = f"{url}?tab=specifications"
+            self.logger.info(f"访问规格参数页面: {spec_url}")
 
             # 使用selenium访问
             self.driver.get(spec_url)
@@ -110,42 +131,43 @@ class ActiCrawler(BaseCrawler):
                     EC.presence_of_element_located((By.CSS_SELECTOR, "span#selfModelName"))
                 )
                 product_id = product_id_element.text.strip()
+                self.logger.debug(f"获取到产品ID: {product_id}")
             except (TimeoutException, NoSuchElementException) as e:
-                print(f"无法获取产品ID {spec_url}: {str(e)}")
+                self.logger.error(f"无法获取产品ID: {str(e)}")
                 return None
 
-            # 获取product_name (div#popupHeaderSpec的text)
+            # 获取产品名称 (可能需要根据实际HTML结构调整选择器)
             try:
-                product_name_element = self.driver.find_element(By.CSS_SELECTOR, "div#popupHeaderSpec")
-                product_name = product_name_element.text.strip()
-            except (NoSuchElementException) as e:
-                print(f"无法获取产品名称 {spec_url}: {str(e)}")
-                return None
+                name_element = self.driver.find_element(By.CSS_SELECTOR, "div#popupHeaderSpec")
+                product_name = name_element.text.strip()
+                self.logger.debug(f"获取到产品名称: {product_name}")
+            except (TimeoutException, NoSuchElementException) as e:
+                self.logger.warning(f"无法获取产品名称: {str(e)}")
+                product_name = "未知名称"
 
-            # 获取参数表格数据
+            # 提取规格参数
             params = []
             try:
-                table_rows = self.driver.find_elements(By.CSS_SELECTOR, "table.c-table > tbody > tr")
-
-                for row in table_rows:
-                    # 获取第一个td的text作为paramName
+                param_rows = self.driver.find_elements(By.CSS_SELECTOR, "table.c-table > tbody > tr")
+                for row in param_rows:
                     try:
-                        td_elements = row.find_elements(By.TAG_NAME, "td")
-                        if len(td_elements) >= 2:
-                            param_name = td_elements[0].text.strip()
-                            param_value = td_elements[1].text.strip()
-
-                            params.append({
-                                "paramName": param_name,
-                                "param": param_value
-                            })
+                        cells = row.find_elements(By.TAG_NAME, "td")
+                        if len(cells) >= 2:
+                            param_name = cells[0].text.strip()
+                            param_value = cells[1].text.strip()
+                            if param_name and param_value:
+                                params.append({
+                                    "paramName": param_name,
+                                    "param": param_value
+                                })
                     except Exception as e:
-                        print(f"提取参数行时出错: {str(e)}")
-                        continue
-            except Exception as e:
-                print(f"提取参数表格时出错 {spec_url}: {str(e)}")
+                        self.logger.warning(f"解析参数行时出错: {str(e)}")
 
-            # 准备产品数据
+                self.logger.debug(f"提取到 {len(params)} 个参数")
+            except Exception as e:
+                self.logger.warning(f"提取规格参数时出错: {str(e)}")
+
+            # 构建并返回产品数据
             product_data = {
                 'product_id': product_id,
                 'product_name': product_name,
@@ -155,10 +177,5 @@ class ActiCrawler(BaseCrawler):
             return product_data
 
         except Exception as e:
-            print(f"提取产品详情时出错 {url}: {str(e)}")
+            self.logger.error(f"提取产品详情时出错: {str(e)}")
             return None
-
-
-if __name__ == "__main__":
-    crawler = ActiCrawler()
-    crawler.run()
