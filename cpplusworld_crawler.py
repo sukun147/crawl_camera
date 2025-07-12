@@ -23,11 +23,6 @@ class CPlusWorldCrawler(BaseCrawler):
         # 设置起始URL
         self.start_urls = ["https://www.cpplusworld.com/Products/network-camera"]
 
-        # 设置请求头
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-
     def get_selector(self, url):
         """
         获取页面的Selector对象
@@ -39,7 +34,7 @@ class CPlusWorldCrawler(BaseCrawler):
             Selector对象，失败则返回None
         """
         try:
-            response = requests.get(url, headers=self.headers, timeout=10)
+            response = requests.get(url, timeout=10)
             response.raise_for_status()  # 如果响应状态码不是200，抛出异常
             return Selector(text=response.text)
         except Exception as e:
