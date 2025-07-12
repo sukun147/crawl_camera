@@ -12,7 +12,7 @@ from base_crawler import BaseCrawler
 
 class HisharpCrawler(BaseCrawler):
     """
-    海康威视(Hisharp)网站爬虫，继承自BaseCrawler
+    Hisharp网站爬虫，继承自BaseCrawler
     """
 
     def __init__(self, data_dir="data"):
@@ -20,7 +20,7 @@ class HisharpCrawler(BaseCrawler):
         初始化Hisharp爬虫
         """
         # 调用父类初始化方法，使用Selenium
-        super().__init__(brand_name="hisharp", data_dir=data_dir, use_selenium=True)
+        super().__init__(brand_name="hisharp", data_dir=data_dir)
 
         # 设置Hisharp特定的属性
         self.base_url = "https://www.hisharp.com"
@@ -45,9 +45,10 @@ class HisharpCrawler(BaseCrawler):
         try:
             response = requests.get(url, timeout=20)
             response.raise_for_status()
+            self.logger.info(f"成功获取页面: {url}")
             return Selector(text=response.text)
         except Exception as e:
-            print(f"获取页面内容时出错 {url}: {str(e)}")
+            self.logger.error(f"获取页面内容时出错 {url}: {str(e)}")
             return None
 
     def get_links_from_page(self, url, selector=None):
@@ -64,6 +65,7 @@ class HisharpCrawler(BaseCrawler):
         links = []
         selector = self.get_selector(url)
         if not selector:
+            self.logger.warning(f"无法获取页面选择器: {url}")
             return links
 
         # 获取所有.pic-box的href属性
@@ -75,6 +77,7 @@ class HisharpCrawler(BaseCrawler):
                 full_url = urljoin(self.base_url, href)
                 links.append(full_url)
 
+        self.logger.info(f"从页面 {url} 获取到 {len(links)} 个产品链接")
         return links
 
     def extract_product_details(self, url):
@@ -88,6 +91,7 @@ class HisharpCrawler(BaseCrawler):
             产品数据字典或None（如果提取失败）
         """
         try:
+            self.logger.info(f"开始提取产品详情: {url}")
             self.driver.get(url)
             time.sleep(2)  # 等待页面加载
 
@@ -98,10 +102,10 @@ class HisharpCrawler(BaseCrawler):
                 ))
                 product_id = product_id_elem.text.strip()
                 if not product_id:
-                    print(f"无法获取产品ID {url}")
+                    self.logger.warning(f"无法获取产品ID {url}")
                     return None
             except (TimeoutException, NoSuchElementException) as e:
-                print(f"无法获取产品ID {url}: {str(e)}")
+                self.logger.error(f"无法获取产品ID {url}: {str(e)}")
                 return None
 
             # 获取产品名称 (h1 > span.ch的text)
@@ -110,8 +114,8 @@ class HisharpCrawler(BaseCrawler):
                 product_name = product_name_elem.text.strip()
                 if not product_name:
                     product_name = "未知名称"
-            except (NoSuchElementException) as e:
-                print(f"无法获取产品名称 {url}: {str(e)}")
+            except NoSuchElementException as e:
+                self.logger.error(f"无法获取产品名称 {url}: {str(e)}")
                 product_name = "未知名称"
 
             # 点击"產品規格"按钮
@@ -122,23 +126,19 @@ class HisharpCrawler(BaseCrawler):
                 spec_button.click()
                 time.sleep(1.5)  # 等待规格内容加载
             except (TimeoutException, NoSuchElementException) as e:
-                print(f"无法点击產品規格按钮 {url}: {str(e)}")
-                # 尝试使用JavaScript点击
+                self.logger.warning(f"无法点击产品规格按钮 {url}: {str(e)}")
                 try:
                     spec_button = self.driver.find_element(By.CSS_SELECTOR, 'a[title="產品規格"]')
                     self.driver.execute_script("arguments[0].click();", spec_button)
                     time.sleep(1.5)
                 except Exception as js_e:
                     print(f"JavaScript点击產品規格按钮失败 {url}: {str(js_e)}")
-                    # 继续执行，可能无法获取参数
 
             # 获取参数表格
             params = []
             try:
                 table_rows = self.driver.find_elements(By.CSS_SELECTOR, 'tbody > tr')
-
                 for row in table_rows:
-                    # 获取参数名称和值
                     cells = row.find_elements(By.TAG_NAME, 'td')
                     if len(cells) >= 2:
                         param_name = cells[0].text.strip()
@@ -150,7 +150,7 @@ class HisharpCrawler(BaseCrawler):
                                 "param": param_value
                             })
             except Exception as e:
-                print(f"获取参数表格时出错 {url}: {str(e)}")
+                self.logger.warning(f"获取参数表格时出错 {url}: {str(e)}")
 
             # 构建产品数据
             product_data = {
@@ -159,11 +159,11 @@ class HisharpCrawler(BaseCrawler):
                 'params': params
             }
 
+            self.logger.info(f"成功提取产品详情: {product_id}")
             return product_data
+
         except Exception as e:
-            print(f"提取产品详情时出错 {url}: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            self.logger.error(f"提取产品详情时出错 {url}: {str(e)}")
             return None
 
     def process_category_page(self, url):
@@ -177,9 +177,3 @@ class HisharpCrawler(BaseCrawler):
             产品链接列表
         """
         return self.get_links_from_page(url)
-
-
-if __name__ == "__main__":
-    # 创建并运行爬虫
-    crawler = HisharpCrawler()
-    crawler.run()
