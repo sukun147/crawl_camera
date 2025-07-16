@@ -6,6 +6,9 @@ from .acti_crawler import ActiCrawler
 from .everfocus_crawler import EverFocusCrawler
 from .cpplusworld_crawler import CPlusWorldCrawler
 from .hisharp_crawler import HisharpCrawler
+from .lilin_crawler import LilinCrawler
+from .geovision_crawler import GeoVisionCrawler
+from .aver_crawler import AVerCrawler
 
 # 将所有爬虫类添加到__all__列表中，方便from crawlers import *的使用
 __all__ = [
@@ -16,5 +19,8 @@ __all__ = [
     'ActiCrawler',
     'EverFocusCrawler',
     'CPlusWorldCrawler',
-    'HisharpCrawler'
+    'HisharpCrawler',
+    'LilinCrawler',
+    'GeoVisionCrawler',
+    'AVerCrawler'
 ]
